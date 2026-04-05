@@ -1,21 +1,8 @@
-import Link from "next/link";
+
 
 export default function AboutPage() {
   return (
-    <div className="min-h-screen">
-      {/* Navbar */}
-      <header className="border-b border-border/60">
-        <div className="mx-auto flex h-14 max-w-3xl items-center justify-between px-4">
-          <Link href="/" className="flex items-center gap-2">
-            <span className="text-xl">🍜</span>
-            <span className="font-bold tracking-tight">স্ট্রিট ফুড</span>
-          </Link>
-          <Link href="/login" className="text-sm font-medium text-primary hover:text-primary/80">
-            লগইন
-          </Link>
-        </div>
-      </header>
-
+    <div>
       <main className="mx-auto max-w-3xl px-4 py-12">
         <h1 className="text-3xl font-bold tracking-tight">আমাদের গল্প 📖</h1>
 

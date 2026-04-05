@@ -20,10 +20,10 @@ export function Footer() {
           <div>
             <h4 className="mb-4 text-sm font-semibold text-foreground">এক্সপ্লোর</h4>
             <ul className="space-y-2.5 text-sm text-muted-foreground">
-              <li><Link href="/search" className="transition-colors hover:text-foreground">খাবার খুঁজুন</Link></li>
-              <li><Link href="/stores" className="transition-colors hover:text-foreground">দোকান দেখুন</Link></li>
-              <li><Link href="/reviews" className="transition-colors hover:text-foreground">রিভিউ পড়ুন</Link></li>
-              <li><Link href="/popular" className="transition-colors hover:text-foreground">জনপ্রিয় খাবার</Link></li>
+              <li><Link href="#" className="transition-colors hover:text-foreground">খাবার খুঁজুন</Link></li>
+              <li><Link href="#" className="transition-colors hover:text-foreground">দোকান দেখুন</Link></li>
+              <li><Link href="#" className="transition-colors hover:text-foreground">রিভিউ পড়ুন</Link></li>
+              <li><Link href="#" className="transition-colors hover:text-foreground">জনপ্রিয় খাবার</Link></li>
             </ul>
           </div>
 
@@ -31,10 +31,10 @@ export function Footer() {
           <div>
             <h4 className="mb-4 text-sm font-semibold text-foreground">অ্যাকাউন্ট</h4>
             <ul className="space-y-2.5 text-sm text-muted-foreground">
-              <li><Link href="/profile" className="transition-colors hover:text-foreground">প্রোফাইল</Link></li>
-              <li><Link href="/my-reviews" className="transition-colors hover:text-foreground">আমার রিভিউ</Link></li>
-              <li><Link href="/settings" className="transition-colors hover:text-foreground">সেটিংস</Link></li>
-              <li><Link href="/help" className="transition-colors hover:text-foreground">সাহায্য</Link></li>
+              <li><Link href="#" className="transition-colors hover:text-foreground">প্রোফাইল</Link></li>
+              <li><Link href="#" className="transition-colors hover:text-foreground">আমার রিভিউ</Link></li>
+              <li><Link href="#" className="transition-colors hover:text-foreground">সেটিংস</Link></li>
+              <li><Link href="#" className="transition-colors hover:text-foreground">সাহায্য</Link></li>
             </ul>
           </div>
 
