@@ -1,9 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useAuth } from "@/context/auth-context";
 import { Button } from "@/components/ui/button";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -19,6 +21,15 @@ import {
 export function Navbar() {
   const { user, logout } = useAuth();
   const [loggingOut, setLoggingOut] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
+  const pathname = usePathname();
+
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 10);
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
 
   if (!user) return null;
 
@@ -27,28 +38,70 @@ export function Navbar() {
     await logout();
   }
 
+  const navLinks = getNavLinks(user.role);
+
   return (
-    <header className="sticky top-0 z-10 border-b border-border/60 backdrop-blur-sm">
-      <div className="mx-auto flex h-16 max-w-5xl items-center justify-between px-4">
-        <Link href="/" className="flex items-center gap-2.5">
-          <span className="text-2xl">🍜</span>
-          <span className="text-lg font-bold tracking-tight">স্ট্রিট ফুড</span>
-        </Link>
-        <div className="flex items-center gap-4">
-          <div className="hidden items-center gap-2 sm:flex">
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">
-              {user.name.charAt(0).toUpperCase()}
-            </div>
+    <header
+      className={`sticky top-0 z-50 transition-all duration-300 ${
+        scrolled
+          ? "glass border-b border-primary/10"
+          : "bg-background/60 backdrop-blur-sm border-b border-border/20"
+      }`}
+    >
+      <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6">
+        <div className="flex items-center gap-8">
+          <Link href="/" className="flex items-center gap-2.5 group">
+            <span className="text-2xl transition-transform duration-300 group-hover:scale-110">🍜</span>
+            <span className="text-lg font-bold tracking-tight font-heading text-primary glow-text">
+              স্ট্রিট ফুড
+            </span>
+          </Link>
+          <nav className="hidden items-center gap-0.5 lg:flex">
+            {navLinks.map((link) => (
+              <Link
+                key={link.href}
+                href={link.href}
+                className={`relative rounded-lg px-3 py-2 text-sm transition-all duration-200 ${
+                  pathname === link.href
+                    ? "font-semibold text-primary"
+                    : "text-muted-foreground hover:text-foreground hover:bg-primary/5"
+                }`}
+              >
+                {link.label}
+                {pathname === link.href && (
+                  <motion.span
+                    layoutId="nav-indicator"
+                    className="absolute inset-x-3 -bottom-4.25 h-0.5 rounded-full bg-primary"
+                    transition={{ type: "spring", stiffness: 380, damping: 30 }}
+                  />
+                )}
+              </Link>
+            ))}
+          </nav>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <Link
+            href="/profile"
+            className="hidden items-center gap-2.5 rounded-full py-1 pl-1 pr-3 transition-all hover:bg-primary/5 sm:flex"
+          >
+            {user.profile_photo ? (
+              <img src={user.profile_photo} alt="" className="h-8 w-8 rounded-full object-cover ring-2 ring-primary/20" />
+            ) : (
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary ring-2 ring-primary/20">
+                {user.name.charAt(0).toUpperCase()}
+              </div>
+            )}
             <span className="text-sm font-medium">{user.name}</span>
-          </div>
+          </Link>
 
           <AlertDialog>
             <AlertDialogTrigger asChild>
-              <Button variant="outline" size="sm">
+              <Button variant="outline" size="sm" className="hidden sm:inline-flex border-primary/20 hover:border-primary/40 hover:bg-primary/5">
                 লগআউট
               </Button>
             </AlertDialogTrigger>
-            <AlertDialogContent>
+            <AlertDialogContent className="glass border-primary/20">
               <AlertDialogHeader>
                 <AlertDialogTitle>আপনি কি লগআউট করতে চান?</AlertDialogTitle>
                 <AlertDialogDescription>
@@ -74,8 +127,120 @@ export function Navbar() {
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
+
+          <button
+            onClick={() => setMobileOpen(!mobileOpen)}
+            className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:text-foreground hover:bg-primary/5 lg:hidden"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              {mobileOpen ? (
+                <><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></>
+              ) : (
+                <><line x1="4" y1="8" x2="20" y2="8" /><line x1="4" y1="16" x2="20" y2="16" /></>
+              )}
+            </svg>
+          </button>
         </div>
       </div>
+
+      <AnimatePresence>
+        {mobileOpen && (
+          <motion.nav
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.25 }}
+            className="overflow-hidden border-t border-primary/10 px-4 pb-4 pt-2 lg:hidden"
+          >
+            <div className="flex items-center gap-3 border-b border-primary/10 pb-3 mb-2 sm:hidden">
+              <Link href="/profile" onClick={() => setMobileOpen(false)} className="flex items-center gap-2.5">
+                {user.profile_photo ? (
+                  <img src={user.profile_photo} alt="" className="h-8 w-8 rounded-full object-cover ring-2 ring-primary/20" />
+                ) : (
+                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">
+                    {user.name.charAt(0).toUpperCase()}
+                  </div>
+                )}
+                <span className="text-sm font-medium">{user.name}</span>
+              </Link>
+            </div>
+            {navLinks.map((link) => (
+              <Link
+                key={link.href}
+                href={link.href}
+                onClick={() => setMobileOpen(false)}
+                className={`block rounded-lg px-3 py-2.5 text-sm transition-colors ${
+                  pathname === link.href
+                    ? "font-semibold text-primary bg-primary/5"
+                    : "text-muted-foreground hover:text-foreground hover:bg-primary/5"
+                }`}
+              >
+                {link.label}
+              </Link>
+            ))}
+            <div className="mt-2 border-t border-primary/10 pt-3 sm:hidden">
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button variant="outline" size="sm" className="w-full border-primary/20">
+                    লগআউট
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent className="glass border-primary/20">
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>আপনি কি লগআউট করতে চান?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      লগআউট করলে আপনাকে আবার লগইন করতে হবে।
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel className="cursor-pointer">না, থাকুক</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={handleLogout}
+                      disabled={loggingOut}
+                      className="cursor-pointer bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    >
+                      {loggingOut ? "লগআউট হচ্ছে..." : "হ্যাঁ, লগআউট করুন"}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            </div>
+          </motion.nav>
+        )}
+      </AnimatePresence>
     </header>
   );
+}
+
+function getNavLinks(role: string) {
+  const common = [{ href: "/stores", label: "দোকান" }];
+
+  if (role === "user") {
+    return [
+      ...common,
+      { href: "/my-reviews", label: "আমার রিভিউ" },
+      { href: "/suggest", label: "সাজেস্ট" },
+    ];
+  }
+
+  if (role === "store") {
+    return [
+      ...common,
+      { href: "/my-store", label: "আমার দোকানসমূহ" },
+      { href: "/claim", label: "দাবি করুন" },
+    ];
+  }
+
+  if (role === "admin") {
+    return [
+      ...common,
+      { href: "/admin", label: "ড্যাশবোর্ড" },
+      { href: "/admin/users", label: "ব্যবহারকারী" },
+      { href: "/admin/stores", label: "দোকান ব্যবস্থাপনা" },
+      { href: "/admin/suggestions", label: "সাজেশন" },
+      { href: "/admin/claims", label: "দাবি" },
+    ];
+  }
+
+  return common;
 }

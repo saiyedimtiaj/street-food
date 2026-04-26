@@ -1,17 +1,23 @@
 import type { Metadata } from "next";
-import { Hind_Siliguri, JetBrains_Mono } from "next/font/google";
+import { Noto_Sans_Bengali, Inter, Sora } from "next/font/google";
 import { Providers } from "@/components/providers";
 import "./globals.css";
 
-const fontSans = Hind_Siliguri({
+const fontSans = Noto_Sans_Bengali({
   subsets: ["latin", "bengali"],
   weight: ["300", "400", "500", "600", "700"],
   variable: "--font-sans",
 });
 
-const fontMono = JetBrains_Mono({
+const fontLatin = Inter({
   subsets: ["latin"],
-  variable: "--font-mono",
+  variable: "--font-latin",
+});
+
+const fontHeading = Sora({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-heading",
 });
 
 export const metadata: Metadata = {
@@ -25,8 +31,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="bn">
-      <body className={`${fontSans.variable} ${fontMono.variable} font-sans antialiased`}>
+    <html lang="bn" className="dark">
+      <body className={`${fontSans.variable} ${fontLatin.variable} ${fontHeading.variable} font-sans antialiased`}>
         <Providers>{children}</Providers>
       </body>
     </html>

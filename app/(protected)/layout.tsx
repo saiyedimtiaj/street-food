@@ -23,7 +23,10 @@ export default function ProtectedLayout({
   if (isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+          <span className="text-xs text-muted-foreground">লোড হচ্ছে...</span>
+        </div>
       </div>
     );
   }
