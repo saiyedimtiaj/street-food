@@ -6,13 +6,16 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { Star, MapPin, ArrowLeft, ChevronLeft, ChevronRight, ImageIcon, Trash2, UtensilsCrossed, CircleDot, Navigation } from "lucide-react";
+import { Star, MapPin, ArrowLeft, ChevronLeft, ChevronRight, ImageIcon, Trash2, UtensilsCrossed, CircleDot, Navigation, AlertTriangle, CheckCircle, XCircle, Send } from "lucide-react";
 import { getStoreById } from "@/lib/stores";
 import { getReviewsByStore, createReview, deleteReview } from "@/lib/reviews";
+import { getMyComplaintForStore, createComplaint } from "@/lib/complaints";
 import { useAuth } from "@/context/auth-context";
 import { useToast } from "@/components/ui/toast";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { TiptapEditor } from "@/components/tiptap-editor";
 import { getStoreImage, getFoodImage } from "@/lib/images";
 import { fadeInUp } from "@/lib/animations";
@@ -23,12 +26,70 @@ const StaticMap = dynamic(() => import("@/components/static-map").then((m) => ({
   loading: () => <div className="h-56 sm:h-64 rounded-xl border border-border/60 animate-pulse bg-muted/20" />,
 });
 
+function ComplaintForm({
+  storeId,
+  onSuccess,
+  onCancel,
+}: {
+  storeId: string;
+  onSuccess: () => void;
+  onCancel: () => void;
+}) {
+  const [subject, setSubject] = useState("");
+  const [description, setDescription] = useState("");
+  const { toast } = useToast();
+
+  const mutation = useMutation({
+    mutationFn: () => createComplaint({ store_id: storeId, subject, description }),
+    onSuccess: () => {
+      toast("অভিযোগ জমা হয়েছে", "success");
+      onSuccess();
+    },
+    onError: () => {
+      toast("অভিযোগ জমা ব্যর্থ হয়েছে", "error");
+    },
+  });
+
+  return (
+    <div className="rounded-2xl border border-border/60 bg-card p-5 space-y-4">
+      <div className="space-y-1.5">
+        <Label htmlFor="complaint-subject">বিষয় *</Label>
+        <Input
+          id="complaint-subject"
+          value={subject}
+          onChange={(e) => setSubject(e.target.value)}
+          placeholder="সমস্যার সংক্ষিপ্ত বিবরণ"
+          maxLength={255}
+        />
+      </div>
+      <div className="space-y-1.5">
+        <Label>বিস্তারিত বিবরণ *</Label>
+        <TiptapEditor content={description} onChange={setDescription} />
+      </div>
+      <div className="flex items-center justify-end gap-2 pt-1">
+        <Button variant="ghost" size="sm" onClick={onCancel} disabled={mutation.isPending}>
+          বাতিল
+        </Button>
+        <Button
+          size="sm"
+          onClick={() => mutation.mutate()}
+          disabled={mutation.isPending || subject.trim().length < 3 || description.trim().length < 10}
+        >
+          <Send size={13} className="mr-1.5" />
+          {mutation.isPending ? "জমা হচ্ছে..." : "জমা দিন"}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export default function StoreDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [reviewPage, setReviewPage] = useState(1);
   const [showReviewForm, setShowReviewForm] = useState(false);
+  const [showComplaintForm, setShowComplaintForm] = useState(false);
 
   const { data: store, isLoading, isError } = useQuery({
     queryKey: ["store", id],
@@ -38,6 +99,12 @@ export default function StoreDetailPage() {
   const { data: reviewsData } = useQuery({
     queryKey: ["reviews", id, reviewPage],
     queryFn: () => getReviewsByStore(id, reviewPage),
+  });
+
+  const { data: myComplaint, refetch: refetchComplaint } = useQuery({
+    queryKey: ["my-complaint", id],
+    queryFn: () => getMyComplaintForStore(id),
+    enabled: !!user && user.role === "user",
   });
 
   if (isLoading) {
@@ -238,6 +305,63 @@ export default function StoreDetailPage() {
               )
             )}
           </section>
+
+          {/* Complaint section — only for regular users */}
+          {user?.role === "user" && (
+            <section className="mt-10">
+              <div className="flex items-center gap-2 mb-4">
+                <AlertTriangle size={16} className="text-muted-foreground" />
+                <h2 className="text-base font-semibold font-heading">অভিযোগ করুন</h2>
+              </div>
+
+              {/* Already submitted */}
+              {myComplaint ? (
+                <div className="rounded-2xl border border-border/60 bg-card p-5 space-y-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold">{myComplaint.subject}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {new Date(myComplaint.created_at).toLocaleDateString("bn-BD")}
+                      </p>
+                    </div>
+                    <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                      myComplaint.status === "resolved" ? "bg-emerald-500/10 text-emerald-500"
+                      : myComplaint.status === "dismissed" ? "bg-muted text-muted-foreground"
+                      : "bg-amber-500/10 text-amber-600"
+                    }`}>
+                      {myComplaint.status === "resolved" ? "সমাধান হয়েছে" : myComplaint.status === "dismissed" ? "বাতিল" : "পেন্ডিং"}
+                    </span>
+                  </div>
+                  <div
+                    className="prose prose-sm max-w-none text-muted-foreground text-sm leading-relaxed"
+                    dangerouslySetInnerHTML={{ __html: myComplaint.description }}
+                  />
+                  {myComplaint.admin_note && (
+                    <div className="border-l-2 border-primary/30 pl-4 bg-muted/30 py-2.5 pr-3 rounded-r-lg">
+                      <p className="text-xs font-semibold text-primary mb-1">প্রশাসকের মন্তব্য</p>
+                      <p className="text-sm text-muted-foreground">{myComplaint.admin_note}</p>
+                    </div>
+                  )}
+                </div>
+              ) : showComplaintForm ? (
+                <ComplaintForm
+                  storeId={id}
+                  onSuccess={() => { setShowComplaintForm(false); refetchComplaint(); }}
+                  onCancel={() => setShowComplaintForm(false)}
+                />
+              ) : (
+                <div className="rounded-2xl border border-border/60 bg-card p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                  <div>
+                    <p className="text-sm font-medium">এই দোকান সম্পর্কে অভিযোগ আছে?</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">আপনার সমস্যার কথা জানান, আমরা দেখব।</p>
+                  </div>
+                  <Button variant="outline" size="sm" onClick={() => setShowComplaintForm(true)} className="shrink-0">
+                    <AlertTriangle size={13} className="mr-1.5" /> অভিযোগ করুন
+                  </Button>
+                </div>
+              )}
+            </section>
+          )}
         </div>
 
         {/* Right sidebar — Menu + Location */}

@@ -239,6 +239,7 @@ function getNavLinks(role: string) {
       { href: "/admin/stores", label: "দোকান ব্যবস্থাপনা" },
       { href: "/admin/suggestions", label: "সাজেশন" },
       { href: "/admin/claims", label: "দাবি" },
+      { href: "/admin/complaints", label: "অভিযোগ" },
     ];
   }
 

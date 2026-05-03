@@ -108,6 +108,20 @@ export interface Claim {
   user?: Pick<User, "id" | "name" | "email">;
 }
 
+export interface Complaint {
+  id: string;
+  store_id: string;
+  user_id: string;
+  subject: string;
+  description: string;
+  status: "pending" | "resolved" | "dismissed";
+  admin_note?: string;
+  created_at: string;
+  updated_at: string;
+  store?: Pick<Store, "id" | "name" | "address">;
+  user?: Pick<User, "id" | "name" | "email">;
+}
+
 export interface AdminStats {
   totalUsers: number;
   totalStores: number;

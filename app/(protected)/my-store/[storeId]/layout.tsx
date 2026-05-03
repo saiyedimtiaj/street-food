@@ -5,7 +5,7 @@ import { useParams, usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
-import { LayoutDashboard, UtensilsCrossed, Image as ImageIcon, MessageSquare, ChevronLeft } from "lucide-react";
+import { LayoutDashboard, UtensilsCrossed, Image as ImageIcon, MessageSquare, ChevronLeft, AlertTriangle } from "lucide-react";
 import { getStoreById } from "@/lib/stores";
 import { useAuth } from "@/context/auth-context";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -15,6 +15,7 @@ const TABS = [
   { label: "মেনু", segment: "/menu", icon: UtensilsCrossed },
   { label: "গ্যালারি", segment: "/gallery", icon: ImageIcon },
   { label: "রিভিউ", segment: "/reviews", icon: MessageSquare },
+  { label: "অভিযোগ", segment: "/complaints", icon: AlertTriangle },
 ];
 
 export default function StoreIdLayout({ children }: { children: React.ReactNode }) {
