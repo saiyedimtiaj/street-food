@@ -9,7 +9,7 @@ import { getAdminStats } from "@/lib/admin";
 import { logout } from "@/lib/auth";
 import {
   LayoutDashboard, Users, Store, MessageSquare, Lightbulb, Bookmark,
-  Settings, ExternalLink, LogOut, ChevronLeft, ChevronRight, X, Menu, Flame,
+  Settings, ExternalLink, LogOut, ChevronLeft, ChevronRight, X, Menu, Flame, AlertTriangle,
 } from "lucide-react";
 
 interface NavItem {
@@ -57,6 +57,7 @@ export function AdminSidebar() {
       items: [
         { icon: <Lightbulb size={18} />, label: "পরামর্শ", href: "/admin/suggestions", badge: stats?.pendingSuggestions },
         { icon: <Bookmark size={18} />, label: "দাবি", href: "/admin/claims", badge: stats?.pendingClaims },
+        { icon: <AlertTriangle size={18} />, label: "অভিযোগ", href: "/admin/complaints", badge: stats?.pendingComplaints },
       ],
     },
     {

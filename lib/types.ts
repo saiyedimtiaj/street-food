@@ -128,6 +128,7 @@ export interface AdminStats {
   totalReviews: number;
   pendingSuggestions: number;
   pendingClaims: number;
+  pendingComplaints: number;
   activeStores: number;
 }
 
