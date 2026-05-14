@@ -1,85 +1,216 @@
 "use client";
 
-import { useState } from "react";
-import dynamic from "next/dynamic";
+import { useState, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { motion } from "framer-motion";
-import { Star, MapPin, ArrowLeft, ChevronLeft, ChevronRight, ImageIcon, Trash2, UtensilsCrossed, CircleDot, Navigation, AlertTriangle, CheckCircle, XCircle, Send } from "lucide-react";
 import { getStoreById } from "@/lib/stores";
 import { getReviewsByStore, createReview, deleteReview } from "@/lib/reviews";
-import { getMyComplaintForStore, createComplaint } from "@/lib/complaints";
 import { useAuth } from "@/context/auth-context";
-import { useToast } from "@/components/ui/toast";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { TiptapEditor } from "@/components/tiptap-editor";
 import { getStoreImage, getFoodImage } from "@/lib/images";
-import { fadeInUp } from "@/lib/animations";
 import type { Review, Food } from "@/lib/types";
+import { Car, Bike, Bus, Navigation2, Clock, Banknote, MapPin, Loader2, AlertCircle, LocateFixed } from "lucide-react";
 
-const StaticMap = dynamic(() => import("@/components/static-map").then((m) => ({ default: m.StaticMap })), {
-  ssr: false,
-  loading: () => <div className="h-56 sm:h-64 rounded-xl border border-border/60 animate-pulse bg-muted/20" />,
-});
+// ── Types ─────────────────────────────────────────────────────────────────────
+interface RouteResult {
+  profile: string;
+  distanceM: number;
+  durationS: number;
+  error?: boolean;
+}
 
-function ComplaintForm({
-  storeId,
-  onSuccess,
-  onCancel,
-}: {
-  storeId: string;
-  onSuccess: () => void;
-  onCancel: () => void;
-}) {
-  const [subject, setSubject] = useState("");
-  const [description, setDescription] = useState("");
-  const { toast } = useToast();
+// ── Route helpers ─────────────────────────────────────────────────────────────
+function fmtDist(m: number) {
+  if (m < 1000) return `${Math.round(m)} মিটার`;
+  return `${(m / 1000).toFixed(1)} কিমি`;
+}
+function fmtTime(s: number) {
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m} মিনিট`;
+  return `${Math.floor(m / 60)} ঘণ্টা ${m % 60} মিনিট`;
+}
+function estimateCost(distanceM: number, mode: string): string {
+  const km = distanceM / 1000;
+  if (mode === "car") return `৳${Math.round(Math.max(30, km * 12))}`;
+  if (mode === "cng")  return `৳${Math.round(Math.max(40, km * 18))}`;
+  if (mode === "bus")  return `৳${Math.round(Math.max(10, km * 3))}`;
+  return "বিনামূল্যে";
+}
 
-  const mutation = useMutation({
-    mutationFn: () => createComplaint({ store_id: storeId, subject, description }),
-    onSuccess: () => {
-      toast("অভিযোগ জমা হয়েছে", "success");
-      onSuccess();
-    },
-    onError: () => {
-      toast("অভিযোগ জমা ব্যর্থ হয়েছে", "error");
-    },
-  });
+const TRANSPORT_MODES = [
+  { id: "car",    orsProfile: "driving-car",      label: "গাড়ি",     labelEn: "Car",     icon: Car,        showIfKm: Infinity },
+  { id: "cng",    orsProfile: "driving-car",      label: "সিএনজি",   labelEn: "CNG",     icon: Bus,        showIfKm: 20 },
+  { id: "bike",   orsProfile: "cycling-regular",  label: "সাইকেল",   labelEn: "Bicycle", icon: Bike,       showIfKm: 15 },
+  { id: "walk",   orsProfile: "foot-walking",     label: "হেঁটে",    labelEn: "Walk",    icon: Navigation2,showIfKm: 5 },
+  { id: "bus",    orsProfile: "driving-car",      label: "বাস",      labelEn: "Bus",     icon: Bus,        showIfKm: Infinity },
+];
+
+// ── StoreRoutes Component ─────────────────────────────────────────────────────
+function StoreRoutes({ lat, lng }: { lat: number; lng: number }) {
+  const [userPos, setUserPos] = useState<{ lat: number; lng: number } | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [results, setResults] = useState<Record<string, RouteResult>>({});
+  const [activeMode, setActiveMode] = useState("car");
+
+  const fetchRoutes = useCallback(async (pos: { lat: number; lng: number }) => {
+    const key = process.env.NEXT_PUBLIC_ORS_API_KEY;
+    if (!key || key === "your_openrouteservice_api_key_here") {
+      setError("OpenRouteService API key সেট করা হয়নি।");
+      return;
+    }
+    const profiles = ["driving-car", "cycling-regular", "foot-walking"];
+    const fetched: Record<string, RouteResult> = {};
+    await Promise.all(
+      profiles.map(async (profile) => {
+        try {
+          const url = `https://api.openrouteservice.org/v2/directions/${profile}?start=${pos.lng},${pos.lat}&end=${lng},${lat}&api_key=${key}`;
+          const res = await fetch(url);
+          if (!res.ok) throw new Error();
+          const data = await res.json();
+          const summary = data.features?.[0]?.properties?.summary;
+          if (!summary) throw new Error();
+          fetched[profile] = { profile, distanceM: summary.distance, durationS: summary.duration };
+        } catch {
+          fetched[profile] = { profile, distanceM: 0, durationS: 0, error: true };
+        }
+      })
+    );
+    setResults(fetched);
+  }, [lat, lng]);
+
+  async function getLocation() {
+    setLoading(true);
+    setError("");
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const p = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        setUserPos(p);
+        await fetchRoutes(p);
+        setLoading(false);
+      },
+      () => { setError("অবস্থান পাওয়া যায়নি। Location access দিন।"); setLoading(false); }
+    );
+  }
+
+  const getRouteData = (mode: typeof TRANSPORT_MODES[0]) => {
+    const raw = results[mode.orsProfile];
+    if (!raw || raw.error) return null;
+    return raw;
+  };
+
+  const activeTransport = TRANSPORT_MODES.find((m) => m.id === activeMode)!;
+  const activeData = userPos ? getRouteData(activeTransport) : null;
+  const distKm = activeData ? activeData.distanceM / 1000 : 0;
+  const visibleModes = userPos
+    ? TRANSPORT_MODES.filter((m) => {
+        const d = getRouteData(m);
+        return d ? d.distanceM / 1000 <= m.showIfKm : m.id === "car" || m.id === "bus";
+      })
+    : TRANSPORT_MODES;
 
   return (
-    <div className="rounded-2xl border border-border/60 bg-card p-5 space-y-4">
-      <div className="space-y-1.5">
-        <Label htmlFor="complaint-subject">বিষয় *</Label>
-        <Input
-          id="complaint-subject"
-          value={subject}
-          onChange={(e) => setSubject(e.target.value)}
-          placeholder="সমস্যার সংক্ষিপ্ত বিবরণ"
-          maxLength={255}
-        />
+    <section className="mt-10">
+      <div className="flex items-center gap-2 mb-4">
+        <MapPin size={16} className="text-muted-foreground" />
+        <h2 className="text-base font-semibold">কিভাবে যাবেন</h2>
       </div>
-      <div className="space-y-1.5">
-        <Label>বিস্তারিত বিবরণ *</Label>
-        <TiptapEditor content={description} onChange={setDescription} />
-      </div>
-      <div className="flex items-center justify-end gap-2 pt-1">
-        <Button variant="ghost" size="sm" onClick={onCancel} disabled={mutation.isPending}>
-          বাতিল
-        </Button>
-        <Button
-          size="sm"
-          onClick={() => mutation.mutate()}
-          disabled={mutation.isPending || subject.trim().length < 3 || description.trim().length < 10}
-        >
-          <Send size={13} className="mr-1.5" />
-          {mutation.isPending ? "জমা হচ্ছে..." : "জমা দিন"}
-        </Button>
-      </div>
-    </div>
+
+      {!userPos ? (
+        <div className="rounded-xl border border-border/40 p-6 text-center">
+          <LocateFixed size={28} className="mx-auto mb-3 text-muted-foreground" />
+          <p className="text-sm text-muted-foreground mb-4">আপনার বর্তমান অবস্থান থেকে এই দোকানে পৌঁছানোর সব সম্ভাব্য পথ দেখতে অবস্থান শেয়ার করুন।</p>
+          {error && (
+            <div className="mb-3 flex items-center justify-center gap-1.5 text-sm text-destructive">
+              <AlertCircle size={14} /> {error}
+            </div>
+          )}
+          <Button onClick={getLocation} disabled={loading} size="sm">
+            {loading ? <Loader2 size={14} className="mr-1.5 animate-spin" /> : <LocateFixed size={14} className="mr-1.5" />}
+            {loading ? "অবস্থান নেওয়া হচ্ছে..." : "আমার অবস্থান শেয়ার করুন"}
+          </Button>
+        </div>
+      ) : (
+        <div className="rounded-xl border border-border/40 overflow-hidden">
+          {/* Mode tabs */}
+          <div className="flex border-b border-border/40 overflow-x-auto">
+            {visibleModes.map((mode) => {
+              const Icon = mode.icon;
+              return (
+                <button
+                  key={mode.id}
+                  onClick={() => setActiveMode(mode.id)}
+                  className={`flex flex-1 items-center justify-center gap-1.5 px-4 py-3 text-xs font-medium whitespace-nowrap transition-colors ${
+                    activeMode === mode.id
+                      ? "border-b-2 border-primary text-primary"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  <Icon size={14} /> {mode.label}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Route details */}
+          <div className="p-5">
+            {activeData ? (
+              <div className="space-y-4">
+                {/* Summary cards */}
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="rounded-lg border border-border/40 p-3 text-center">
+                    <MapPin size={16} className="mx-auto mb-1 text-muted-foreground" />
+                    <p className="text-base font-bold">{fmtDist(activeData.distanceM)}</p>
+                    <p className="text-xs text-muted-foreground">দূরত্ব</p>
+                  </div>
+                  <div className="rounded-lg border border-border/40 p-3 text-center">
+                    <Clock size={16} className="mx-auto mb-1 text-muted-foreground" />
+                    <p className="text-base font-bold">
+                      {activeTransport.id === "bus"
+                        ? fmtTime(activeData.durationS * 1.4)
+                        : fmtTime(activeData.durationS)}
+                    </p>
+                    <p className="text-xs text-muted-foreground">আনুমানিক সময়</p>
+                  </div>
+                  <div className="rounded-lg border border-border/40 p-3 text-center">
+                    <Banknote size={16} className="mx-auto mb-1 text-muted-foreground" />
+                    <p className="text-base font-bold">{estimateCost(activeData.distanceM, activeTransport.id)}</p>
+                    <p className="text-xs text-muted-foreground">আনুমানিক খরচ</p>
+                  </div>
+                </div>
+
+                {/* Extra info per mode */}
+                <div className="rounded-lg bg-muted/40 px-4 py-3 text-sm text-muted-foreground space-y-1">
+                  {activeTransport.id === "car" && <p>ব্যক্তিগত গাড়ি বা রাইড-শেয়ার (পাঠাও/উবার) ব্যবহার করুন। পার্কিং খুঁজে নিন।</p>}
+                  {activeTransport.id === "cng" && <p>সিএনজি বা অটোরিকশা — মিটারে চাপলে সাশ্রয়ী। আগে দর ঠিক করুন।</p>}
+                  {activeTransport.id === "bike" && <p>সাইকেলে যাওয়া পরিবেশবান্ধব ও স্বাস্থ্যকর। হেলমেট পরুন।</p>}
+                  {activeTransport.id === "walk" && <p>হেঁটে গেলে স্বাস্থ্য ভালো থাকে। নিরাপদ ফুটপাত ব্যবহার করুন।</p>}
+                  {activeTransport.id === "bus" && <p>স্থানীয় বাসে খরচ কম। সময় একটু বেশি লাগতে পারে। গুগল ম্যাপে বাস রুট দেখুন।</p>}
+                </div>
+
+                <a
+                  href={`https://www.google.com/maps/dir/?api=1&origin=${userPos.lat},${userPos.lng}&destination=${lat},${lng}&travelmode=${
+                    activeTransport.id === "car" || activeTransport.id === "cng" || activeTransport.id === "bus" ? "driving"
+                    : activeTransport.id === "bike" ? "bicycling" : "walking"
+                  }`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-center gap-2 rounded-lg border border-border/40 py-2.5 text-sm font-medium transition-colors hover:bg-muted/40"
+                >
+                  <Navigation2 size={14} /> Google Maps-এ খুলুন
+                </a>
+              </div>
+            ) : (
+              <div className="py-6 text-center">
+                <p className="text-sm text-muted-foreground">এই পথের তথ্য পাওয়া যায়নি।</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -89,7 +220,6 @@ export default function StoreDetailPage() {
   const queryClient = useQueryClient();
   const [reviewPage, setReviewPage] = useState(1);
   const [showReviewForm, setShowReviewForm] = useState(false);
-  const [showComplaintForm, setShowComplaintForm] = useState(false);
 
   const { data: store, isLoading, isError } = useQuery({
     queryKey: ["store", id],
@@ -101,24 +231,10 @@ export default function StoreDetailPage() {
     queryFn: () => getReviewsByStore(id, reviewPage),
   });
 
-  const { data: myComplaint, refetch: refetchComplaint } = useQuery({
-    queryKey: ["my-complaint", id],
-    queryFn: () => getMyComplaintForStore(id),
-    enabled: !!user && user.role === "user",
-  });
-
   if (isLoading) {
     return (
-      <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
-        <Skeleton className="h-56 w-full rounded-2xl sm:h-72" />
-        <div className="mt-8 grid gap-8 lg:grid-cols-[1fr_340px]">
-          <div className="space-y-4">
-            <Skeleton className="h-5 w-1/3" />
-            <Skeleton className="h-4 w-2/3" />
-            <Skeleton className="h-4 w-1/2" />
-          </div>
-          <Skeleton className="h-64 rounded-xl" />
-        </div>
+      <div className="flex min-h-[50vh] items-center justify-center">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
       </div>
     );
   }
@@ -126,12 +242,10 @@ export default function StoreDetailPage() {
   if (isError || !store) {
     return (
       <div className="mx-auto max-w-3xl px-4 py-16 text-center">
-        <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-muted">
-          <UtensilsCrossed size={28} className="text-muted-foreground" />
-        </div>
-        <h2 className="mt-5 text-lg font-semibold font-heading">দোকান পাওয়া যায়নি</h2>
-        <Link href="/stores" className="mt-3 inline-flex items-center gap-1.5 text-sm text-primary hover:underline">
-          <ArrowLeft size={14} /> দোকান তালিকায় ফিরে যান
+        <span className="text-5xl">😕</span>
+        <h2 className="mt-4 text-lg font-semibold">দোকান পাওয়া যায়নি</h2>
+        <Link href="/stores" className="mt-3 inline-block text-sm text-primary hover:underline">
+          ← দোকান তালিকায় ফিরে যান
         </Link>
       </div>
     );
@@ -148,33 +262,32 @@ export default function StoreDetailPage() {
           alt={store.name}
           className="h-56 w-full object-cover sm:h-72 lg:h-80"
         />
-        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
-        <div className="absolute bottom-0 left-0 right-0 p-5 sm:p-8">
+        <div className="absolute inset-0 bg-linear-to-t from-black/60 via-transparent to-transparent" />
+        <div className="absolute bottom-0 left-0 right-0 p-6 sm:p-8">
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div>
-              <h1 className="text-2xl font-bold tracking-tight text-white sm:text-3xl font-heading">
+              <h1 className="text-2xl font-bold tracking-tight text-white sm:text-3xl">
                 {store.name}
               </h1>
-              <div className="mt-2.5 flex flex-wrap items-center gap-2">
+              <div className="mt-2 flex flex-wrap items-center gap-2">
                 {store.averageRating !== undefined && store.averageRating > 0 && (
-                  <span className="flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1 text-sm font-medium text-white backdrop-blur-sm">
-                    <Star size={13} className="text-amber-400 fill-amber-400" />
-                    {store.averageRating.toFixed(1)}
-                    <span className="text-white/60 text-xs">({store.totalReviews})</span>
+                  <span className="flex items-center gap-1 rounded-full bg-white/20 px-2.5 py-1 text-sm font-medium text-white backdrop-blur-sm">
+                    <span className="text-yellow-400">★</span> {store.averageRating.toFixed(1)}
+                    <span className="text-white/70">({store.totalReviews})</span>
                   </span>
                 )}
                 {store.category && (
-                  <span className="rounded-full bg-white/15 px-3 py-1 text-xs font-medium text-white backdrop-blur-sm">
+                  <span className="rounded-full bg-white/20 px-2.5 py-1 text-xs font-medium text-white backdrop-blur-sm">
                     {store.category}
                   </span>
                 )}
                 <span
-                  className={`rounded-full px-3 py-1 text-xs font-medium backdrop-blur-sm ${
+                  className={`rounded-full px-2.5 py-1 text-xs font-medium backdrop-blur-sm ${
                     store.status === "active"
-                      ? "bg-emerald-500/20 text-emerald-300"
+                      ? "bg-green-500/30 text-green-200"
                       : store.status === "suspended"
-                      ? "bg-red-500/20 text-red-300"
-                      : "bg-yellow-500/20 text-yellow-300"
+                      ? "bg-red-500/30 text-red-200"
+                      : "bg-yellow-500/30 text-yellow-200"
                   }`}
                 >
                   {store.status === "active" ? "সক্রিয়" : store.status === "suspended" ? "স্থগিত" : "নিষ্ক্রিয়"}
@@ -192,10 +305,7 @@ export default function StoreDetailPage() {
           {/* Info */}
           <section>
             {store.address && (
-              <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                <MapPin size={14} className="shrink-0 text-muted-foreground/60" />
-                {store.address}
-              </p>
+              <p className="text-sm text-muted-foreground">📍 {store.address}</p>
             )}
             {store.description && (
               <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
@@ -207,31 +317,32 @@ export default function StoreDetailPage() {
           {/* Gallery */}
           {store.gallery && store.gallery.length > 0 && (
             <section className="mt-8">
-              <h2 className="flex items-center gap-2 text-base font-semibold font-heading">
-                <ImageIcon size={16} className="text-muted-foreground" />
-                গ্যালারি
-              </h2>
+              <h2 className="text-lg font-semibold">গ্যালারি</h2>
               <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
                 {store.gallery.map((img) => (
                   <img
                     key={img.id}
                     src={img.image_url}
                     alt=""
-                    className="aspect-[4/3] w-full rounded-xl object-cover"
+                    className="aspect-4/3 w-full rounded-lg object-cover"
                   />
                 ))}
               </div>
             </section>
           )}
 
+          {/* Route Finder */}
+          {store.latitude && store.longitude && (
+            <StoreRoutes lat={Number(store.latitude)} lng={Number(store.longitude)} />
+          )}
+
           {/* Reviews */}
           <section className="mt-10">
             <div className="flex items-center justify-between">
-              <h2 className="flex items-center gap-2 text-base font-semibold font-heading">
-                <Star size={16} className="text-muted-foreground" />
+              <h2 className="text-lg font-semibold">
                 রিভিউ
                 {reviewsData?.total !== undefined && (
-                  <span className="text-sm font-normal text-muted-foreground">
+                  <span className="ml-1.5 text-sm font-normal text-muted-foreground">
                     ({reviewsData.total})
                   </span>
                 )}
@@ -278,7 +389,7 @@ export default function StoreDetailPage() {
                       disabled={reviewPage <= 1}
                       onClick={() => setReviewPage((p) => p - 1)}
                     >
-                      <ChevronLeft size={14} className="mr-1" /> পূর্ববর্তী
+                      ← পূর্ববর্তী
                     </Button>
                     <span className="text-sm text-muted-foreground">
                       {reviewPage} / {reviewsData.totalPages}
@@ -289,96 +400,34 @@ export default function StoreDetailPage() {
                       disabled={reviewPage >= reviewsData.totalPages}
                       onClick={() => setReviewPage((p) => p + 1)}
                     >
-                      পরবর্তী <ChevronRight size={14} className="ml-1" />
+                      পরবর্তী →
                     </Button>
                   </div>
                 )}
               </div>
             ) : (
               !showReviewForm && (
-                <div className="mt-8 flex flex-col items-center py-10 text-center">
-                  <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted">
-                    <Star size={24} className="text-muted-foreground" />
-                  </div>
+                <div className="mt-8 py-10 text-center">
+                  <span className="text-4xl">📝</span>
                   <p className="mt-3 text-sm text-muted-foreground">এখনো কোনো রিভিউ নেই</p>
                 </div>
               )
             )}
           </section>
-
-          {/* Complaint section — only for regular users */}
-          {user?.role === "user" && (
-            <section className="mt-10">
-              <div className="flex items-center gap-2 mb-4">
-                <AlertTriangle size={16} className="text-muted-foreground" />
-                <h2 className="text-base font-semibold font-heading">অভিযোগ করুন</h2>
-              </div>
-
-              {/* Already submitted */}
-              {myComplaint ? (
-                <div className="rounded-2xl border border-border/60 bg-card p-5 space-y-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-semibold">{myComplaint.subject}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        {new Date(myComplaint.created_at).toLocaleDateString("bn-BD")}
-                      </p>
-                    </div>
-                    <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                      myComplaint.status === "resolved" ? "bg-emerald-500/10 text-emerald-500"
-                      : myComplaint.status === "dismissed" ? "bg-muted text-muted-foreground"
-                      : "bg-amber-500/10 text-amber-600"
-                    }`}>
-                      {myComplaint.status === "resolved" ? "সমাধান হয়েছে" : myComplaint.status === "dismissed" ? "বাতিল" : "পেন্ডিং"}
-                    </span>
-                  </div>
-                  <div
-                    className="prose prose-sm max-w-none text-muted-foreground text-sm leading-relaxed"
-                    dangerouslySetInnerHTML={{ __html: myComplaint.description }}
-                  />
-                  {myComplaint.admin_note && (
-                    <div className="border-l-2 border-primary/30 pl-4 bg-muted/30 py-2.5 pr-3 rounded-r-lg">
-                      <p className="text-xs font-semibold text-primary mb-1">প্রশাসকের মন্তব্য</p>
-                      <p className="text-sm text-muted-foreground">{myComplaint.admin_note}</p>
-                    </div>
-                  )}
-                </div>
-              ) : showComplaintForm ? (
-                <ComplaintForm
-                  storeId={id}
-                  onSuccess={() => { setShowComplaintForm(false); refetchComplaint(); }}
-                  onCancel={() => setShowComplaintForm(false)}
-                />
-              ) : (
-                <div className="rounded-2xl border border-border/60 bg-card p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                  <div>
-                    <p className="text-sm font-medium">এই দোকান সম্পর্কে অভিযোগ আছে?</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">আপনার সমস্যার কথা জানান, আমরা দেখব।</p>
-                  </div>
-                  <Button variant="outline" size="sm" onClick={() => setShowComplaintForm(true)} className="shrink-0">
-                    <AlertTriangle size={13} className="mr-1.5" /> অভিযোগ করুন
-                  </Button>
-                </div>
-              )}
-            </section>
-          )}
         </div>
 
-        {/* Right sidebar — Menu + Location */}
-        <aside className="space-y-6 lg:sticky lg:top-24 lg:self-start">
+        {/* Right sidebar — Menu */}
+        <aside className="lg:sticky lg:top-24 lg:self-start">
           {store.foods && store.foods.length > 0 ? (
-            <div className="rounded-xl border border-border/60 p-5">
-              <h2 className="flex items-center gap-2 text-base font-semibold font-heading">
-                <UtensilsCrossed size={16} className="text-muted-foreground" />
-                মেনু
-              </h2>
-              <div className="mt-4 divide-y divide-border/40">
+            <div className="rounded-xl border border-border/40 p-5">
+              <h2 className="text-lg font-semibold">মেনু</h2>
+              <div className="mt-4 space-y-3">
                 {store.foods.map((food: Food, idx: number) => (
-                  <div key={food.id} className="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
+                  <div key={food.id} className="flex items-center gap-3">
                     <img
                       src={getFoodImage(food.image_url, idx)}
                       alt={food.name}
-                      className="h-11 w-11 rounded-lg object-cover"
+                      className="h-12 w-12 rounded-lg object-cover"
                     />
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center justify-between gap-2">
@@ -393,51 +442,19 @@ export default function StoreDetailPage() {
                         </p>
                       )}
                     </div>
-                    <CircleDot
-                      size={10}
-                      className={`shrink-0 ${food.is_available ? "text-emerald-500" : "text-red-400"}`}
+                    <span
+                      className={`h-2 w-2 shrink-0 rounded-full ${
+                        food.is_available ? "bg-green-500" : "bg-red-400"
+                      }`}
                     />
                   </div>
                 ))}
               </div>
             </div>
           ) : (
-            <div className="rounded-xl border border-border/60 p-5 text-center">
-              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-muted">
-                <UtensilsCrossed size={20} className="text-muted-foreground" />
-              </div>
-              <p className="mt-3 text-sm text-muted-foreground">মেনু এখনো যোগ করা হয়নি</p>
-            </div>
-          )}
-
-          {/* Location Map */}
-          {store.latitude && store.longitude && (
-            <div className="rounded-xl border border-border/60 overflow-hidden">
-              <div className="p-4 pb-3">
-                <h2 className="flex items-center gap-2 text-base font-semibold font-heading">
-                  <MapPin size={16} className="text-muted-foreground" />
-                  অবস্থান
-                </h2>
-                {store.address && (
-                  <p className="mt-1 text-xs text-muted-foreground">{store.address}</p>
-                )}
-              </div>
-              <StaticMap
-                lat={store.latitude}
-                lng={store.longitude}
-                className="h-64 rounded-none border-0 border-t border-border/60"
-              />
-              <div className="p-3 border-t border-border/60">
-                <a
-                  href={`https://www.google.com/maps/dir/?api=1&destination=${store.latitude},${store.longitude}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center justify-center gap-1.5 w-full rounded-lg border border-border/60 px-3 py-2 text-xs font-medium text-foreground transition-colors hover:border-primary/40 hover:text-primary"
-                >
-                  <Navigation size={12} />
-                  দিকনির্দেশনা পান
-                </a>
-              </div>
+            <div className="rounded-xl border border-border/40 p-5 text-center">
+              <span className="text-3xl">🍽️</span>
+              <p className="mt-2 text-sm text-muted-foreground">মেনু এখনো যোগ করা হয়নি</p>
             </div>
           )}
         </aside>
@@ -473,7 +490,7 @@ function ReviewForm({ storeId, onSuccess }: { storeId: string; onSuccess: () => 
   }
 
   return (
-    <form onSubmit={handleSubmit} className="rounded-xl border border-border/60 p-5">
+    <form onSubmit={handleSubmit} className="rounded-xl border border-border/40 p-5">
       {error && <p className="mb-3 text-sm text-destructive">{error}</p>}
 
       <div className="mb-4">
@@ -484,12 +501,11 @@ function ReviewForm({ storeId, onSuccess }: { storeId: string; onSuccess: () => 
               key={n}
               type="button"
               onClick={() => setRating(n)}
-              className="transition-colors"
+              className={`text-2xl transition-colors ${
+                n <= rating ? "text-yellow-500" : "text-border"
+              }`}
             >
-              <Star
-                size={22}
-                className={n <= rating ? "text-amber-400 fill-amber-400" : "text-border"}
-              />
+              ★
             </button>
           ))}
         </div>
@@ -544,7 +560,7 @@ function ReviewCard({
   });
 
   return (
-    <div className="rounded-xl border border-border/60 p-5">
+    <div className="rounded-xl border border-border/40 p-5">
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-3">
           {review.user?.profile_photo ? (
@@ -554,21 +570,16 @@ function ReviewCard({
               className="h-9 w-9 rounded-full object-cover"
             />
           ) : (
-            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/8 text-sm font-semibold text-primary">
+            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">
               {review.user?.name?.charAt(0) || "?"}
             </div>
           )}
           <div>
             <p className="text-sm font-semibold">{review.user?.name}</p>
             <div className="flex items-center gap-2">
-              <span className="flex items-center gap-0.5">
-                {Array.from({ length: 5 }).map((_, i) => (
-                  <Star
-                    key={i}
-                    size={11}
-                    className={i < review.rating ? "text-amber-400 fill-amber-400" : "text-border"}
-                  />
-                ))}
+              <span className="text-xs text-yellow-500">
+                {"★".repeat(review.rating)}
+                {"☆".repeat(5 - review.rating)}
               </span>
               <span className="text-xs text-muted-foreground">
                 {new Date(review.created_at).toLocaleDateString("bn-BD")}
@@ -580,9 +591,9 @@ function ReviewCard({
           <button
             onClick={() => deleteMutation.mutate()}
             disabled={deleteMutation.isPending}
-            className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:text-destructive hover:bg-destructive/10"
+            className="text-xs text-muted-foreground transition-colors hover:text-destructive"
           >
-            <Trash2 size={14} />
+            মুছুন
           </button>
         )}
       </div>
@@ -605,12 +616,11 @@ function ReviewCard({
       )}
 
       {review.replies && review.replies.length > 0 && (
-        <div className="mt-4 rounded-lg border border-border/40 p-3">
-          <p className="text-xs font-semibold text-muted-foreground">দোকানের উত্তর</p>
+        <div className="mt-4 rounded-lg bg-muted/30 p-3">
+          <p className="text-xs font-semibold text-muted-foreground">🏪 দোকানের উত্তর</p>
           <p className="mt-1 text-sm leading-relaxed">{review.replies[0].reply_text}</p>
         </div>
       )}
     </div>
   );
 }
-
