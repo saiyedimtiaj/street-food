@@ -4,8 +4,8 @@ import { useState } from "react";
 import { useParams } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
-import { UtensilsCrossed, Pencil, Trash2, Plus } from "lucide-react";
-import { getFoodsByStore, createFood, updateFood, deleteFood } from "@/lib/foods";
+import { UtensilsCrossed, Pencil, Trash2, Plus, Upload, X, ImageIcon } from "lucide-react";
+import { getFoodsByStore, createFood, updateFood, deleteFood, uploadFoodImage } from "@/lib/foods";
 import { getStoreById } from "@/lib/stores";
 import { useToast } from "@/components/ui/toast";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -133,9 +133,26 @@ function FoodForm({ storeId, food, onClose, onSuccess }: { storeId: string; food
   const [description, setDescription] = useState(food?.description || "");
   const [price, setPrice] = useState(food?.price?.toString() || "");
   const [isAvailable, setIsAvailable] = useState(food?.is_available ?? true);
+  const [imageUrl, setImageUrl] = useState(food?.image_url || "");
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string>(food?.image_url || "");
+  const [uploading, setUploading] = useState(false);
+
+  function handleImageChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImageFile(file);
+    setImagePreview(URL.createObjectURL(file));
+  }
+
+  function clearImage() {
+    setImageFile(null);
+    setImagePreview("");
+    setImageUrl("");
+  }
 
   const mutation = useMutation({
-    mutationFn: (data: { name: string; description?: string; price: number; is_available: boolean }) => {
+    mutationFn: async (data: { name: string; description?: string; price: number; is_available: boolean; image_url?: string }) => {
       return food ? updateFood(food.id, data) : createFood({ ...data, store_id: storeId });
     },
     onSuccess: () => {
@@ -145,14 +162,29 @@ function FoodForm({ storeId, food, onClose, onSuccess }: { storeId: string; food
     onError: () => toast("সমস্যা হয়েছে", "error"),
   });
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim() || !price) return;
+
+    let finalImageUrl = imageUrl;
+    if (imageFile) {
+      setUploading(true);
+      try {
+        finalImageUrl = await uploadFoodImage(imageFile);
+      } catch {
+        toast("ছবি আপলোড ব্যর্থ", "error");
+        setUploading(false);
+        return;
+      }
+      setUploading(false);
+    }
+
     mutation.mutate({
       name: name.trim(),
       description: description.trim() || undefined,
       price: parseFloat(price),
       is_available: isAvailable,
+      image_url: finalImageUrl || undefined,
     });
   }
 
@@ -163,14 +195,33 @@ function FoodForm({ storeId, food, onClose, onSuccess }: { storeId: string; food
         <div><Label className="text-xs">নাম *</Label><Input value={name} onChange={(e) => setName(e.target.value)} className="h-9 mt-1 border-border/60" /></div>
         <div><Label className="text-xs">দাম (৳) *</Label><Input value={price} onChange={(e) => setPrice(e.target.value)} type="number" step="0.01" min="0" className="h-9 mt-1 border-border/60" /></div>
         <div className="sm:col-span-2"><Label className="text-xs">বিবরণ</Label><Input value={description} onChange={(e) => setDescription(e.target.value)} className="h-9 mt-1 border-border/60" /></div>
+
+        {/* Image upload */}
+        <div className="sm:col-span-2 space-y-2">
+          <Label className="text-xs">মেনু ছবি</Label>
+          {imagePreview ? (
+            <div className="relative w-full max-w-xs">
+              <img src={imagePreview} alt="preview" className="w-full aspect-video object-cover rounded-lg border border-border/60" />
+              <button type="button" onClick={clearImage} className="absolute top-1.5 right-1.5 rounded-full bg-background/80 p-1 hover:bg-destructive hover:text-white transition-colors">
+                <X size={12} />
+              </button>
+            </div>
+          ) : (
+            <label className="flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-border/60 p-6 cursor-pointer hover:border-primary/40 transition-colors max-w-xs">
+              <ImageIcon size={24} className="text-muted-foreground" />
+              <span className="text-xs text-muted-foreground">ছবি বেছে নিন</span>
+              <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={handleImageChange} />
+            </label>
+          )}
+        </div>
       </div>
       <label className="flex items-center gap-2 cursor-pointer text-sm">
         <input type="checkbox" checked={isAvailable} onChange={(e) => setIsAvailable(e.target.checked)} className="rounded border-border/60" />
         <span>পাওয়া যাচ্ছে</span>
       </label>
       <div className="flex gap-2">
-        <Button type="submit" size="sm" disabled={mutation.isPending}>
-          {mutation.isPending ? "সংরক্ষণ..." : food ? "আপডেট করুন" : "যোগ করুন"}
+        <Button type="submit" size="sm" disabled={mutation.isPending || uploading}>
+          {uploading ? "ছবি আপলোড..." : mutation.isPending ? "সংরক্ষণ..." : food ? "আপডেট করুন" : "যোগ করুন"}
         </Button>
         <Button type="button" variant="ghost" size="sm" onClick={onClose}>বাতিল</Button>
       </div>

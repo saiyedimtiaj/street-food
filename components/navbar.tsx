@@ -201,7 +201,6 @@ function getNavLinks(role: string) {
     return [
       ...common,
       { href: "/my-store", label: "আমার দোকান" },
-      { href: "/my-store/menu", label: "মেনু" },
       { href: "/my-store/reviews", label: "রিভিউ" },
       { href: "/claim", label: "দাবি করুন" },
     ];

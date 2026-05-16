@@ -8,6 +8,16 @@ export async function getFoodsByStore(storeId: string, available?: boolean): Pro
   return res.data.data;
 }
 
+export async function uploadFoodImage(file: File): Promise<string> {
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("folder", "stores");
+  const res = await api.post("/uploads/image", formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+  return res.data.data.url as string;
+}
+
 export async function createFood(data: {
   store_id: string;
   name: string;
